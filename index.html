@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Puzzle Arena: Algorithm Battle</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--tx:#1d1d1b;--mut:#6b6a64;--bd:#dedcd3;--wall:#34343c;--tile:#eceae2;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15151a;--card:#1f1f26;--tx:#f0efea;--mut:#9a99a3;--bd:#33333d;--wall:#8a8a99;--tile:#2d2d38}}
+:root[data-theme="dark"]{--bg:#15151a;--card:#1f1f26;--tx:#f0efea;--mut:#9a99a3;--bd:#33333d;--wall:#8a8a99;--tile:#2d2d38}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px;max-width:1100px;margin:0 auto}
+h1{font-size:22px;margin:0 0 2px}p.sub{margin:0 0 14px;color:var(--mut)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+button{font:inherit;border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:7px 13px;border-radius:8px;cursor:pointer}
+button.on{background:var(--tx);color:var(--bg)}button.go{background:#4f46e5;color:#fff;border-color:#4f46e5}
+label{color:var(--mut);display:flex;align-items:center;gap:6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px}
+.hd{display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:8px}
+.dot{width:10px;height:10px;border-radius:50%}.rank{margin-left:auto;font-size:12px;padding:2px 8px;border-radius:99px;background:var(--tile);color:var(--mut)}
+.viz{aspect-ratio:1;display:flex;align-items:center;justify-content:center;margin-bottom:10px}
+.viz canvas{width:100%;height:100%;border-radius:6px}
+.b3{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:80%}
+.b3 div{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;background:var(--tile);font-weight:700;font-size:20px}
+.b3 div.z{background:transparent}
+.jugs{display:flex;gap:24px;align-items:flex-end;height:80%}
+.jug{width:56px;border:2px solid var(--wall);border-top:none;border-radius:0 0 10px 10px;position:relative;display:flex;align-items:flex-end}
+.jug i{display:block;width:100%;opacity:.8}.jug span{position:absolute;top:-22px;left:0;right:0;text-align:center;font-size:12px;color:var(--mut)}
+.row{display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid var(--bd)}.row b{font-variant-numeric:tabular-nums}
+.row span{color:var(--mut)}
+#sum{margin-top:14px;padding:12px;border-radius:10px;background:var(--card);border:1px solid var(--bd);display:none}
+</style></head><body>
+<h1>Puzzle Arena: Algorithm Battle</h1>
+<p class="sub">BFS, DFS, A* and Greedy search race on the same puzzle. Fewest nodes explored finishes first.</p>
+<div class="bar" id="tabs"></div>
+<div class="bar">
+<button class="go" id="race">Race!</button><button id="newp">New puzzle</button>
+<label>Speed <input type="range" id="spd" min="0" max="10" value="4"></label>
+</div>
+<div class="grid" id="cards"></div>
+<div id="sum"></div>
+<script>
+const ALG={'BFS':'#3b82f6','DFS':'#ef4444','A*':'#10b981','Greedy':'#f59e0b'};
+const GOAL='123456780',N=21,CAP=60000;
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const rnd=n=>Math.floor(Math.random()*n);
+const PZ={
+ puzzle:{name:'8-Puzzle',make(){
+  let s=GOAL,prev=-1;
+  const nx=s=>{const b=s.indexOf('0'),r=b/3|0,c=b%3,o=[];
+   [[-1,0],[1,0],[0,-1],[0,1]].forEach(([dr,dc])=>{const R=r+dr,C=c+dc;if(R<0||R>2||C<0||C>2)return;
+    const t=R*3+C,a=s.split('');a[b]=a[t];a[t]='0';o.push(a.join(''))});return o};
+  for(let i=0;i<22;i++){const o=nx(s).filter(x=>x!==prev);prev=s;s=o[rnd(o.length)]}
+  const h=s=>{let d=0;for(let i=0;i<9;i++){const v=+s[i];if(v){const g=v-1;d+=Math.abs((i/3|0)-(g/3|0))+Math.abs(i%3-g%3)}}return d};
+  return{start:s,goal:s=>s===GOAL,next:nx,h};}},
+ maze:{name:'Maze',make(){
+  const w=new Uint8Array(N*N).fill(1),st=[[1,1]];w[N+1]=0;
+  while(st.length){const[r,c]=st[st.length-1];
+   const o=[[-2,0],[2,0],[0,-2],[0,2]].map(([a,b])=>[r+a,c+b,a/2,b/2]).filter(([a,b])=>a>0&&b>0&&a<N-1&&b<N-1&&w[a*N+b]);
+   if(!o.length){st.pop();continue}
+   const[a,b,da,db]=o[rnd(o.length)];w[(r+da)*N+c+db]=0;w[a*N+b]=0;st.push([a,b])}
+  for(let k=0;k<25;k++){const r=1+rnd(N-2),c=1+rnd(N-2);w[r*N+c]=0}
+  const G=(N-2)*N+N-2;
+  return{start:N+1,wall:w,gl:G,goal:s=>s===G,
+   next:s=>[-N,N,-1,1].map(d=>s+d).filter(t=>t>=0&&t<N*N&&!w[t]),
+   h:s=>Math.abs((s/N|0)-(G/N|0))+Math.abs(s%N-G%N)};}},
+ jug:{name:'Water Jug',make(){
+  const[A,B,T]=[[3,5,4],[5,7,6],[7,11,2],[8,13,5],[9,14,6]][rnd(5)];
+  return{start:'0,0',A,B,T,goal:s=>{const[a,b]=s.split(',').map(Number);return a===T||b===T},
+   next:s=>{const[a,b]=s.split(',').map(Number),pa=Math.min(a,B-b),pb=Math.min(b,A-a);
+    return[[A,b],[a,B],[0,b],[a,0],[a-pa,b+pa],[a+pb,b-pb]].map(x=>x.join(',')).filter(x=>x!==s)},
+   h:s=>{const[a,b]=s.split(',').map(Number);return a===T||b===T?0:1}};}}
+};
+function search(P,alg){
+ const t0=performance.now(),S=P.start,par=new Map([[S,null]]),g=new Map([[S,0]]),closed=new Set(),order=[],heap=[];
+ let q=[S],head=0,found=null;
+ const push=(p,s)=>{heap.push([p,s]);let i=heap.length-1;while(i>0){const u=(i-1)>>1;if(heap[u][0]<=heap[i][0])break;[heap[u],heap[i]]=[heap[i],heap[u]];i=u}};
+ const pop=()=>{const top=heap[0],last=heap.pop();if(heap.length){heap[0]=last;let i=0;for(;;){const l=2*i+1,r=l+1;let m=i;if(l<heap.length&&heap[l][0]<heap[m][0])m=l;if(r<heap.length&&heap[r][0]<heap[m][0])m=r;if(m===i)break;[heap[m],heap[i]]=[heap[i],heap[m]];i=m}}return top[1]};
+ const pri=s=>alg==='A*'?g.get(s)+P.h(s):P.h(s);
+ if(alg==='A*'||alg==='Greedy')push(pri(S),S);
+ while(order.length<CAP){
+  let s;
+  if(alg==='BFS'){if(head>=q.length)break;s=q[head++]}
+  else if(alg==='DFS'){if(!q.length)break;s=q.pop();if(closed.has(s))continue}
+  else{if(!heap.length)break;s=pop();if(closed.has(s))continue}
+  closed.add(s);order.push(s);
+  if(P.goal(s)){found=s;break}
+  const ns=P.next(s);
+  for(const n of(alg==='DFS'?ns.slice().reverse():ns)){
+   const ng=g.get(s)+1;
+   if(alg==='BFS'){if(!par.has(n)){par.set(n,s);g.set(n,ng);q.push(n)}}
+   else if(alg==='DFS'){if(!closed.has(n)){par.set(n,s);g.set(n,ng);q.push(n)}}
+   else if(alg==='Greedy'){if(!closed.has(n)&&!par.has(n)){par.set(n,s);g.set(n,ng);push(pri(n),n)}}
+   else if(!g.has(n)||ng<g.get(n)){g.set(n,ng);par.set(n,s);push(pri(n),n)}
+  }
+ }
+ const ms=performance.now()-t0,path=[];
+ for(let s=found;s!==null&&s!==undefined;s=par.get(s))path.unshift(s);
+ return{order,path:found!==null?path:[],ms,found:found!==null,len:found!==null?path.length-1:null};
+}
+let kind='puzzle',P,R={},idx=0,tick=0,raf=0,done={},places=0,running=false;
+const $=id=>document.getElementById(id);
+function tabs(){$('tabs').innerHTML=Object.entries(PZ).map(([k,v])=>`<button data-k="${k}" class="${k===kind?'on':''}">${v.name}</button>`).join('');
+ $('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{kind=b.dataset.k;tabs();fresh()})}
+function fresh(){cancelAnimationFrame(raf);running=false;P=PZ[kind].make();R={};done={};idx=0;tick=0;places=0;$('sum').style.display='none';
+ for(const a in ALG)R[a]=search(P,a);
+ $('cards').innerHTML=Object.keys(ALG).map(a=>`<div class="card" id="c-${a[0]}${a.length}"><div class="hd"><span class="dot" style="background:${ALG[a]}"></span>${a}<span class="rank">ready</span></div><div class="viz"></div>
+ <div class="row"><span>Nodes explored</span><b class="n">0</b></div><div class="row"><span>Time</span><b class="t">-</b></div><div class="row"><span>Path length</span><b class="l">-</b></div></div>`).join('');
+ draw()}
+const cardOf=a=>$('c-'+a[0]+a.length);
+function draw(){
+ for(const a in ALG){
+  const r=R[a],c=cardOf(a),i=Math.min(idx,r.order.length),fin=idx>=r.order.length;
+  if(fin&&!(a in done)&&running){done[a]=tick;places++;c.dataset.p=places}
+  const f=r.order.length?i/r.order.length:1;
+  c.querySelector('.n').textContent=i.toLocaleString();
+  c.querySelector('.t').textContent=(r.ms*f).toFixed(2)+' ms';
+  c.querySelector('.l').textContent=fin?(r.found?r.len:'not found (cap)'):'...';
+  const rk=c.querySelector('.rank');
+  if(fin&&running||fin&&a in done)rk.textContent=r.found?'#'+c.dataset.p:'cap hit';
+  viz(a,c.querySelector('.viz'),r,i,fin);
+ }
+ if(running&&Object.keys(done).length===4){running=false;summary()}
+}
+function viz(a,el,r,i,fin){
+ const col=ALG[a],cur=i?r.order[i-1]:P.start,
+  shown=fin&&r.found&&a in done?r.path[Math.min(Math.floor((tick-done[a])/3),r.path.length-1)]:cur;
+ if(kind==='maze'){
+  let cv=el.firstChild;if(!cv){cv=document.createElement('canvas');cv.width=cv.height=N*8;el.appendChild(cv)}
+  const x=cv.getContext('2d');x.fillStyle=css('--card');x.fillRect(0,0,N*8,N*8);
+  x.fillStyle=css('--wall');for(let k=0;k<N*N;k++)if(P.wall[k])x.fillRect(k%N*8,(k/N|0)*8,8,8);
+  x.globalAlpha=.4;x.fillStyle=col;for(let k=0;k<i;k++){const s=r.order[k];x.fillRect(s%N*8,(s/N|0)*8,8,8)}
+  x.globalAlpha=1;if(fin&&r.found)for(const s of r.path)x.fillRect(s%N*8+1,(s/N|0)*8+1,6,6);
+  x.fillStyle='#16a34a';x.fillRect(N%N*8+8,8,8,8);x.fillStyle='#dc2626';x.fillRect(P.gl%N*8,(P.gl/N|0)*8,8,8);
+ }else if(kind==='puzzle'){
+  el.innerHTML='<div class="b3">'+shown.split('').map(v=>`<div class="${v==='0'?'z':''}" style="${v==='0'?'':'color:'+col}">${v==='0'?'':v}</div>`).join('')+'</div>';
+ }else{
+  const[x,y]=shown.split(',').map(Number);
+  const j=(v,cap,n)=>`<div class="jug" style="height:${cap*14}px"><span>${n}: ${v}/${cap}</span><i style="height:${v/cap*100}%;background:${col}"></i></div>`;
+  el.innerHTML=`<div class="jugs">${j(x,P.A,'A')}${j(y,P.B,'B')}</div>`;
+ }
+}
+function summary(){
+ const ok=Object.entries(R).filter(([,r])=>r.found);
+ const best=f=>ok.reduce((m,e)=>f(e[1])<f(m[1])?e:m)[0];
+ if(!ok.length)return;
+ $('sum').style.display='block';
+ $('sum').innerHTML=`<b>Results.</b> Fewest nodes: <b>${best(r=>r.order.length)}</b> · Shortest path: <b>${best(r=>r.len)}</b> (${Math.min(...ok.map(e=>e[1].len))} steps) · Fastest time: <b>${best(r=>r.ms)}</b>.
+ <div style="color:var(--mut);margin-top:4px">BFS always finds the shortest path but explores widely. A* keeps that optimal path while exploring far fewer nodes. Greedy is quick but not always optimal. DFS can wander down long paths.</div>`;
+}
+function loop(){
+ tick++;
+ const step=2**(+$('spd').value);
+ const mx=Math.max(...Object.values(R).map(r=>r.order.length));
+ if(idx<mx)idx=Math.min(mx,idx+step);
+ draw();
+ const replaying=Object.entries(R).some(([a,r])=>r.found&&a in done&&tick-done[a]<=r.path.length*3+1);
+ if(running||replaying)raf=requestAnimationFrame(loop);
+}
+$('race').onclick=()=>{fresh2()};
+function fresh2(){cancelAnimationFrame(raf);idx=0;tick=0;done={};places=0;running=true;$('sum').style.display='none';
+ document.querySelectorAll('.rank').forEach(e=>e.textContent='racing');
+ document.querySelectorAll('.card').forEach(c=>delete c.dataset.p);loop()}
+$('newp').onclick=fresh;
+tabs();fresh();
+</script></body></html>
